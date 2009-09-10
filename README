@@ -1,0 +1,9 @@
+I've been experimenting with various ways of extending Django models with new
+fields and/or methods, without the co-operaton of the base model, or jumping
+through any hoops to access the new attributes. The result doesn't strike me
+as very Pythonic, but that suits me just fine. Check out dob/models.py for a
+fairly concise doctest demonstrating what this does.
+
+Most of the techniques within were generalized from:
+  http://wolfram.kriesing.de/blog/index.php/2007/extend-djangos-user-class
+  http://www.amitu.com/blog/2007/july/django-extending-user-model/
