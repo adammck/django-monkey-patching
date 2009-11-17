@@ -7,6 +7,8 @@ from .utils import *
 
 __test__ = {
     "monkey_patch":    monkey_patch,
+    "fields":          fields,
+    "common_attrs":    common_attrs,
     "non_magic_attrs": non_magic_attrs,
     "is_magic":        is_magic
 }

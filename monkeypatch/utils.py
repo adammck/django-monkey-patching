@@ -25,90 +25,182 @@ def monkey_patch(parent):
       class, fields are not inherited, but methods and properties are.
     """
 
-    if not issubclass(parent, models.Model):
-        raise TypeError(
-            "Class '%s' is not a Django model." %
-            (parent.__name__))
-
     def wrapper(ext):
-
-        # if the extension class is a django model, it will create a
-        # circular inheretance chain, which will blow up with a type
-        # error later when it's added to parent.__bases__. catch this
-        # mistake early, to inform the author what they're doing wrong.
-        if issubclass(ext, models.Model):
-            raise TypeError(
-                "Extension class '%s' cannot be a Django model." %
-                (ext.__name__))
-
-        # check that none of the non __magic__ attributes of the
-        # extension are already defined in the parent. this wouldn't
-        # cause an error, but would cause rather confusion behavior.
-        raise_attr_conflicts(parent, ext)
-
-        # add fields from the extension into the model.
-        for name, field in ext.__dict__.items():
-            if isinstance(field, models.Field):
-
-                # extension fields can't be NOT NULL, because that would
-                # break the code that isn't aware of the extension.
-                if not field.null:
-                    raise TypeError(
-                        "Field '%s.%s' must be nullable." %
-                        (ext.__name__, field.name))
-
-                parent.add_to_class(name, field)
-
-        # monkeypatch the extension class into the superclasses of the
-        # parent, so all of the methods in the extension are inherited.
-        parent.__bases__ += (ext,)
+        sanity_check(parent, ext)
+        apply_patch(parent, ext)
         return ext
 
     return wrapper
 
 
-def raise_attr_conflicts(dest, source):
+def sanity_check(dest, source):
     """
-    Raise AttributeError if any of the non-magic attributes of *source*
-    are already used by *dest*. This should be called before monkey-
-    patching *source* into *dest*, to check that the existing behavior
-    of *source* won't be changed.
     """
 
-    dest_attrs = non_magic_attrs(dest)
-    for attr_name in non_magic_attrs(source):
-        if attr_name in dest_attrs:
+    if not issubclass(dest, models.Model):
+        raise TypeError(
+            "Class '%s' is not a Django model." %
+            (dest.__name__))
 
-            raise AttributeError(
-                "Attribute '%s.%s' is already defined by '%s'." %
-                (source.__name__, attr_name, dest.__name__))
+    if issubclass(source, models.Model):
+        raise TypeError(
+            "Extension class '%s' cannot be a Django model." %
+            (source.__name__))
 
-    return True
+    conflicts = common_attrs(dest, source)
+    if conflicts:
+
+        flat_conflicts = ", ".join(
+            map(repr, conflicts))
+
+        raise AttributeError(
+            "Attributes %s are already used by '%s'." %
+            (flat_conflicts, dest.__name__))
+
+
+def apply_patch(dest, source):
+    """
+    """
+
+    dest.__bases__ += (source, )
+
+    for name, f in fields(source).items():
+
+        # extension fields can't be NOT NULL, because that would
+        # break existing code that isn't aware of the new field(s).
+        if not f.null:
+            raise TypeError(
+                "Field '%s.%s' must be nullable." %
+                (ext.__name__, name))
+
+        dest.add_to_class(name, f)
+
+
+def fields(obj):
+    """
+    Return a dict of the Django fields contained by *obj*, excluding
+    those created automatically (eg. primary keys, foreign keys to
+    superclasses).
+
+    >>> class Human(models.Model):
+    ...     first = models.CharField(max_length=100)
+    ...     last  = models.CharField(max_length=100)
+
+    >>> f = fields(Human)
+    >>> sorted(f.keys())
+    ['first', 'last']
+
+    Model inheritance works as expected.
+
+    >>> class Man(Human):
+    ...    beard = models.BooleanField()
+
+    >>> m = Man()
+    >>> f = fields(m)
+    >>> sorted(f.keys())
+    ['beard', 'first', 'last']
+
+    If *obj* is not a Django model, its attributes (and those of its
+    ancestors) are searched for subclasses of django.db.models.Field.
+
+    >>> class Alpha(object):
+    ...    a = models.IntegerField()
+    ...    b = models.IntegerField()
+
+    >>> f = fields(Alpha)
+    >>> sorted(f.keys())
+    ['a', 'b']
+
+    >>> class Beta(Alpha):
+    ...    c = models.BooleanField()
+
+    # FAIL
+    #>>> f = fields(Beta)
+    #>>> sorted(f.keys())
+    #['a', 'b', 'c']
+    """
+
+    if hasattr(obj, "_meta"):
+        fields = [
+            (f.attname, f)
+            for f in obj._meta.fields
+            if f.auto_created is False]
+
+    else:
+        fields = [
+            (name, f)
+            for name, f in obj.__dict__.items()
+            if isinstance(f, models.Field) ]
+
+    return dict(fields)
+
+
+def common_attrs(*args):
+    """
+    Return a set containing the intersection of all non-magic attribute
+    names contained by *args*. When *args* have no common attributes, an
+    empty set is returned. The value of the attribute is not relevant.
+
+    >>> class A: a = 1
+    >>> class B: b = 2
+    >>> class C: c = 3
+
+    >>> class ABC:
+    ...     def a(self): pass
+    ...     def b(self): pass
+    ...     def c(self): pass
+
+    >>> common_attrs(A, B, C)
+    set([])
+
+    >>> common_attrs(A, ABC)
+    set(['a'])
+
+    This is intended to check whether two objects may conflict, before
+    monkey-patching the attributes of one into the other.
+    """
+
+    attr_sets = map(non_magic_attrs, args)
+    return set.intersection(*attr_sets)
 
 
 def non_magic_attrs(obj):
     """
-    Return the non-magic attributes of *obj*.
+    Return a set containing the non-magic attributes of *obj*.
 
-    >>> non_magic_attrs(object)
-    []
+    >>> class Example(object):
+    ...     __aaa__ = "MAGIC!"
+    ...
+    ...     def _b(self):
+    ...         pass
+    ...
+    ...     @property
+    ...     def c(self):
+    ...         pass
+    ...
+    ...     d = True
+    ...     e = None
 
-    >>> class OldExample():
-    ...     _a = True
-    ...     b = None
+    >>> example = Example()
+    >>> example.f = "FFF"
 
-    >>> non_magic_attrs(OldExample)
-    ['_a', 'b']
+    >>> sorted(non_magic_attrs(example))
+    ['_b', 'c', 'd', 'e', 'f']
 
-    >>> class NewExample(object):
-    ...     _c = None
-    ...     d = False
+    But watch out for Python's wacky "Private name mangling"!
+    http://docs.python.org/reference/expressions.html#index-906
 
-    >>> non_magic_attrs(NewExample)
-    ['_c', 'd']
+    >>> class Mangled(object):
+    ...    __private = None
+
+    >>> non_magic_attrs(Mangled)
+    set(['_Mangled__private'])
     """
 
-    return [x for x in dir(obj) if not is_magic(x)]
+    return set([
+        attr_name
+        for attr_name in dir(obj)
+        if not is_magic(attr_name) ])
 
 
 def is_magic(name):
@@ -122,6 +214,9 @@ def is_magic(name):
     True
 
     >>> is_magic("_gamma")
+    False
+
+    >>> is_magic("__delta")
     False
 
     >>> is_magic("_")
