@@ -7,19 +7,16 @@ from django.db import models
 
 class Person(models.Model):
     """
-        A human being. This class is intended to be extended by other apps, to
-        add the fields and functionality needed for the current project. See
-        the "gender" and "dob" apps in this project for an example.
+    A human being. This class is intended to be extended by other apps,
+    to add the fields and functionality needed for the current project.
+    See the "gender" app in this project for an example.
 
-          # create a sample person
-          >>> adam = Person.objects.create(
-          ...   first_name="Adam",
-          ...   last_name="Mckaig"
-          ... )
+    >>> adam = Person.objects.create(
+    ...   first_name="Adam",
+    ...   last_name="Mckaig")
 
-          # return their full names
-          >>> adam.full_name
-          'Adam Mckaig'
+    >>> adam.full_name
+    'Adam Mckaig'
     """
 
     first_name = models.CharField("First Name", max_length=30)
