@@ -4,7 +4,7 @@
 
 from django.db import models
 from person.models import Person
-from monkeypatch.utils import monkey_patch
+from monkeypatch import monkey_patch
 
 
 @monkey_patch(Person)
