@@ -99,11 +99,11 @@ def non_magic_attrs(obj):
 
     >>> non_magic_attrs(OldExample)
     ['_a', 'b']
-    
+
     >>> class NewExample(object):
     ...     _c = None
     ...     d = False
-    
+
     >>> non_magic_attrs(NewExample)
     ['_c', 'd']
     """
@@ -117,13 +117,13 @@ def is_magic(name):
 
     >>> is_magic("alpha")
     False
-    
+
     >>> is_magic("__beta__")
     True
-    
+
     >>> is_magic("_gamma")
     False
-    
+
     >>> is_magic("_")
     False
     """
