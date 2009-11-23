@@ -47,14 +47,14 @@ def sanity_check(dest, source):
             "Extension class '%s' cannot be a Django model." %
             (source.__name__))
 
-    conflicts = common_attrs(dest, source)
-    if conflicts:
+    confl = conflicts(dest, source)
+    if confl:
 
         flat_conflicts = ", ".join(
-            map(repr, conflicts))
+            map(repr, confl))
 
         raise AttributeError(
-            "Attributes %s are already used by '%s'." %
+            "Attribute(s) %s are already used by '%s'." %
             (flat_conflicts, dest.__name__))
 
 
@@ -71,7 +71,7 @@ def apply_patch(dest, source):
         if not f.null:
             raise TypeError(
                 "Field '%s.%s' must be nullable." %
-                (ext.__name__, name))
+                (source.__name__, name))
 
         dest.add_to_class(name, f)
 
@@ -135,33 +135,53 @@ def fields(obj):
     return dict(fields)
 
 
-def common_attrs(*args):
+def conflicts(dest, source):
     """
     Return a set containing the intersection of all non-magic attribute
-    names contained by *args*. When *args* have no common attributes, an
-    empty set is returned. The value of the attribute is not relevant.
+    names or Django fields between classes *dest* and *source*. If there
+    are no common attributes, an empty set is returned.
 
     >>> class A: a = 1
     >>> class B: b = 2
-    >>> class C: c = 3
 
-    >>> class ABC:
+    >>> class AB:
     ...     def a(self): pass
     ...     def b(self): pass
-    ...     def c(self): pass
 
-    >>> common_attrs(A, B, C)
+    >>> conflicts(A, B)
     set([])
 
-    >>> common_attrs(A, ABC)
+    >>> conflicts(A, AB)
     set(['a'])
 
-    This is intended to check whether two objects may conflict, before
-    monkey-patching the attributes of one into the other.
+    >>> conflicts(AB, AB)
+    set(['a', 'b'])
+
+    Since Django fields are stashed away in \_meta, those are explicitly
+    checked also, to ensure that those don't clash with attributes (or
+    other fields) once the class is instantiated.
+
+    >>> class C(models.Model):
+    ...     c = models.IntegerField()
+
+    >>> class BC(object):
+    ...     b = models.CharField()
+    ...     c = True
+
+    >>> conflicts(A, C)
+    set([])
+
+    >>> conflicts(AB, BC)
+    set(['b'])
     """
 
-    attr_sets = map(non_magic_attrs, args)
-    return set.intersection(*attr_sets)
+    d, s = map(
+        lambda obj: set.union(       # the union of...
+            set(fields(obj).keys()), # * django field names
+            non_magic_attrs(obj)),   # * attribute names
+        [dest, source])
+
+    return set.intersection(d, s)
 
 
 def non_magic_attrs(obj):
