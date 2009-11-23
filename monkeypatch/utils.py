@@ -5,7 +5,7 @@
 from django.db import models
 
 
-def monkey_patch(parent):
+def monkey_patch(parent, extension):
     """
     Adds fields, methods, and properties to a an existing Django model
     by monkey-patching it. But don't freak out. It attempts to prevent
@@ -23,18 +23,111 @@ def monkey_patch(parent):
 
     * Because the extension class is not Django model, just a regular
       class, fields are not inherited, but methods and properties are.
+
+
+
+
+    The parent class, which will be extended, is just a regular Django
+    model. Monkey-patching it is guaranteed not to change its behavior,
+    by refusing to apply unless a few conditions are met.
+
+    >>> class Human(models.Model):
+    ...     first = models.CharField(max_length=100)
+    ...     last  = models.CharField(max_length=100)
+
+
+    The extension class is a regular new-style class. To avoid circular
+    inheritance (and very confusing semantics), this cannot be a Django
+    model. Otherwise, the usual inheritance rules apply on both ends.
+
+    >>> class HumanBeardExtension(object):
+    ...     has_beard = models.BooleanField(
+    ...         null=True, blank=True)
+    ...
+    ...     @property
+    ...     def is_manly(self):
+    ...         return self.has_beard is True
+
+
+    These type constraints are enforced. A TypeError is raised if the
+    parent **isn't** a Django model, or the extension **is**.
+
+    >>> class ExampleClass(object):
+    ...     pass
+
+    >>> class ExampleModel(models.Model):
+    ...     pass
+
+    >>> monkey_patch(ExampleClass, HumanBeardExtension)
+    Traceback (most recent call last):
+        ...
+    TypeError: Class 'ExampleClass' is not a Django model.
+
+
+    >>> monkey_patch(Human, ExampleModel)
+    Traceback (most recent call last):
+        ...
+    TypeError: Extension class 'ExampleModel' cannot be a Django model.
+
+
+    If the monkey-patch is successful (ie, no exception is raised), the
+    extension class is added to the ancestors of the parent, making its
+    methods and properties available.
+
+    >>> Human.__bases__ # doctest: +ELLIPSIS
+    (<class 'django...Model'>,)
+
+    >>> monkey_patch(Human, HumanBeardExtension)
+    True
+
+    >>> Human.__bases__ # doctest: +ELLIPSIS
+    (<class 'django...Model'>, <class '...HumanBeardExtension'>)
+
+    >>> h = Human()
+    >>> h.is_manly
+    False
+
+    >>> h.has_beard = True
+    >>> h.is_manly
+    True
+
+
+    Any Django fields defined in the extension class are copied and
+    added to the parent, since those have their own special inheritance.
+    (See: http://docs.djangoproject.com/en/dev/topics/db/models/#id5)
+
+    >>> sorted(fields(Human).keys())
+    ['first', 'has_beard', 'last']
+
+
+    >>> class HumanLongNameExtension(object):
+    ...     first = models.CharField(max_length=200)
+
+    >>> monkey_patch(Human, HumanLongNameExtension)
+    Traceback (most recent call last):
+        ...
+    AttributeError: Attribute(s) 'first' are already used by 'Human'.
     """
 
-    def wrapper(ext):
-        sanity_check(parent, ext)
-        apply_patch(parent, ext)
-        return ext
+    sanity_check(parent, extension)
+    apply_patch(parent, extension)
+    return True
+
+
+def decorator(parent):
+    def wrapper(extension):
+        return monkey_patch(
+            parent, extension)
 
     return wrapper
 
 
 def sanity_check(dest, source):
     """
+    Returns True if it's (probably) sane to monkey-patch *source* into
+    *dest*. It's not an exact science, but the rules are:
+
+    Sorry, RTFS.
     """
 
     if not issubclass(dest, models.Model):

@@ -4,7 +4,7 @@
 
 from django.db import models
 from person.models import Person
-from monkeypatch import monkey_patch
+from monkeypatch import decorator as monkey_patch
 
 
 @monkey_patch(Person)
@@ -17,7 +17,6 @@ class PersonExtensionGender(object):
     ...   first_name="Evan",
     ...   last_name="Wheeler")
 
-    # hehe. i crack me up
     >>> evan.androgynous
     True
 
